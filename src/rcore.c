@@ -283,6 +283,8 @@ typedef struct CoreData {
         Size screenMax;                     // Screen maximum width and height (for resizable window)
         Matrix screenScale;                 // Matrix to scale screen (framebuffer rendering)
 
+        int lastAssociatedMonitorIndex;     // Contains the last monitor index selected using `SetWindowMonitor()` (required by Wayland backend)
+
         char **dropFilepaths;               // Store dropped files paths pointers (provided by GLFW)
         unsigned int dropFileCount;         // Count dropped files strings
 
@@ -308,10 +310,13 @@ typedef struct CoreData {
 
         } Keyboard;
         struct {
-            Vector2 offset;                 // Mouse offset
-            Vector2 scale;                  // Mouse scaling
+            Vector2 offset;                 // Mouse offset in CORE.Window.screen coordinate (set by the user)
+            Vector2 scale;                  // Mouse scaling in CORE.Window.screen coordinate (set by the user)
             Vector2 currentPosition;        // Mouse position on screen
             Vector2 previousPosition;       // Previous mouse position
+
+            Vector2 platformOffset;         // Extra mouse offset set by the platform (for cross-platform consistency)
+            Vector2 platformScale;          // Extra mouse scaling set by the platform (for cross-platform consistency)
 
             int cursor;                     // Tracks current mouse cursor
             bool cursorHidden;              // Track if cursor is hidden
@@ -626,6 +631,9 @@ void InitWindow(int width, int height, const char *title)
     memset(&CORE.Input, 0, sizeof(CORE.Input));     // Reset CORE.Input structure to 0
     CORE.Input.Keyboard.exitKey = KEY_ESCAPE;
     CORE.Input.Mouse.scale = (Vector2){ 1.0f, 1.0f };
+    CORE.Input.Mouse.offset = (Vector2){ 0.0f, 0.0f };
+    CORE.Input.Mouse.platformScale = (Vector2){ 1.0f, 1.0f };
+    CORE.Input.Mouse.platformOffset = (Vector2){ 0.0f, 0.0f };
     CORE.Input.Mouse.cursor = MOUSE_CURSOR_ARROW;
     CORE.Input.Gamepad.lastButtonPressed = GAMEPAD_BUTTON_UNKNOWN;
 
@@ -669,12 +677,16 @@ void InitWindow(int width, int height, const char *title)
     #endif
 #endif
 #if defined(SUPPORT_MODULE_RTEXT) && defined(SUPPORT_DEFAULT_FONT)
-    if ((CORE.Window.flags & FLAG_WINDOW_HIGHDPI) > 0)
+    if (((CORE.Window.flags & FLAG_WINDOW_HIGHDPI) > 0) && ((CORE.Window.flags & FLAG_TEXT_LINEAR_FILTER) > 0))
     {
         // Set default font texture filter for HighDPI (blurry)
         // RL_TEXTURE_FILTER_LINEAR - tex filter: BILINEAR, no mipmaps
         rlTextureParameters(GetFontDefault().texture.id, RL_TEXTURE_MIN_FILTER, RL_TEXTURE_FILTER_LINEAR);
         rlTextureParameters(GetFontDefault().texture.id, RL_TEXTURE_MAG_FILTER, RL_TEXTURE_FILTER_LINEAR);
+
+        // As of 2024-07-24, to keep backward compatibility, `FLAG_WINDOW_HIGHDPI` does not contain the 
+        // bit of `FLAG_TEXT_LINEAR_FILTER`, so we add it here for forward compatibility. TODO remove once deprecated.
+        CORE.Window.flags |= FLAG_TEXT_LINEAR_FILTER;
     }
 #endif
 
@@ -777,8 +789,9 @@ int GetRenderWidth(void)
 {
     int width = 0;
 #if defined(__APPLE__)
-    Vector2 scale = GetWindowScaleDPI();
-    width = (int)((float)CORE.Window.render.width*scale.x);
+    //Vector2 scale = GetWindowScaleDPI();
+    //width = (int)((float)CORE.Window.render.width*scale.x);
+    width = CORE.Window.render.width;
 #else
     width = CORE.Window.render.width;
 #endif
@@ -790,8 +803,9 @@ int GetRenderHeight(void)
 {
     int height = 0;
 #if defined(__APPLE__)
-    Vector2 scale = GetWindowScaleDPI();
-    height = (int)((float)CORE.Window.render.height*scale.y);
+    //Vector2 scale = GetWindowScaleDPI();
+    //height = (int)((float)CORE.Window.render.height*scale.y);
+    height = CORE.Window.render.height;
 #else
     height = CORE.Window.render.height;
 #endif
@@ -3026,27 +3040,43 @@ bool IsMouseButtonUp(int button)
     return up;
 }
 
-// Get mouse position X
+// Get mouse position X in screen coordinate
 int GetMouseX(void)
 {
-    int mouseX = (int)((CORE.Input.Mouse.currentPosition.x + CORE.Input.Mouse.offset.x)*CORE.Input.Mouse.scale.x);
+    // First : apply the platform's offset and scaling :
+    int mouseX = (int)((CORE.Input.Mouse.currentPosition.x + CORE.Input.Mouse.platformOffset.x)*CORE.Input.Mouse.platformScale.x);
+
+    // Second : apply user's offset and scaling :
+    mouseX = (int)(((float)mouseX + CORE.Input.Mouse.offset.x)*CORE.Input.Mouse.scale.x);
+
     return mouseX;
 }
 
-// Get mouse position Y
+// Get mouse position Y in screen coordinate
 int GetMouseY(void)
 {
-    int mouseY = (int)((CORE.Input.Mouse.currentPosition.y + CORE.Input.Mouse.offset.y)*CORE.Input.Mouse.scale.y);
+    // First : apply the platform's offset and scaling :
+    int mouseY = (int)((CORE.Input.Mouse.currentPosition.y + CORE.Input.Mouse.platformOffset.y)*CORE.Input.Mouse.platformScale.y);
+
+    // Second : apply user's offset and scaling :
+    mouseY = (int)(((float)mouseY + CORE.Input.Mouse.offset.y)*CORE.Input.Mouse.scale.y);
+
     return mouseY;
 }
 
-// Get mouse position XY
+// Get mouse position XY in screen coordinate
 Vector2 GetMousePosition(void)
 {
     Vector2 position = { 0 };
 
-    position.x = (CORE.Input.Mouse.currentPosition.x + CORE.Input.Mouse.offset.x)*CORE.Input.Mouse.scale.x;
-    position.y = (CORE.Input.Mouse.currentPosition.y + CORE.Input.Mouse.offset.y)*CORE.Input.Mouse.scale.y;
+    // First : apply the platform's offset and scaling :
+    position.x = (CORE.Input.Mouse.currentPosition.x + CORE.Input.Mouse.platformOffset.x)*CORE.Input.Mouse.platformScale.x;
+    position.y = (CORE.Input.Mouse.currentPosition.y + CORE.Input.Mouse.platformOffset.y)*CORE.Input.Mouse.platformScale.y;
+
+    // Second : apply the user's offset and scaling :
+
+    position.x = (position.x + CORE.Input.Mouse.offset.x)*CORE.Input.Mouse.scale.x;
+    position.y = (position.y + CORE.Input.Mouse.offset.y)*CORE.Input.Mouse.scale.y;
 
     return position;
 }
@@ -3062,14 +3092,14 @@ Vector2 GetMouseDelta(void)
     return delta;
 }
 
-// Set mouse offset
+// Set user's mouse offset
 // NOTE: Useful when rendering to different size targets
 void SetMouseOffset(int offsetX, int offsetY)
 {
     CORE.Input.Mouse.offset = (Vector2){ (float)offsetX, (float)offsetY };
 }
 
-// Set mouse scaling
+// Set user's mouse scaling
 // NOTE: Useful when rendering to different size targets
 void SetMouseScale(float scaleX, float scaleY)
 {
@@ -3185,8 +3215,9 @@ void SetupViewport(int width, int height)
     // NOTE: We consider render size (scaled) and offset in case black bars are required and
     // render area does not match full display area (this situation is only applicable on fullscreen mode)
 #if defined(__APPLE__)
-    Vector2 scale = GetWindowScaleDPI();
-    rlViewport(CORE.Window.renderOffset.x/2*scale.x, CORE.Window.renderOffset.y/2*scale.y, (CORE.Window.render.width)*scale.x, (CORE.Window.render.height)*scale.y);
+    //Vector2 scale = GetWindowScaleDPI();
+    //rlViewport(CORE.Window.renderOffset.x/2*scale.x, CORE.Window.renderOffset.y/2*scale.y, (CORE.Window.render.width)*scale.x, (CORE.Window.render.height)*scale.y);
+    rlViewport(CORE.Window.renderOffset.x/2, CORE.Window.renderOffset.y/2, CORE.Window.render.width, CORE.Window.render.height);
 #else
     rlViewport(CORE.Window.renderOffset.x/2, CORE.Window.renderOffset.y/2, CORE.Window.render.width, CORE.Window.render.height);
 #endif
