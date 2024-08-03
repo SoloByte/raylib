@@ -273,6 +273,7 @@ typedef struct CoreData {
 
         Point position;                     // Window position (required on fullscreen toggle)
         Point previousPosition;             // Window previous position (required on borderless windowed toggle)
+        Vector2 previousContentScale;
         Size display;                       // Display width and height (monitor, device-screen, LCD, ...)
         Size screen;                        // Screen width and height (used render area)
         Size previousScreen;                // Screen previous width and height (required on borderless windowed toggle)
@@ -3180,17 +3181,29 @@ void InitTimer(void)
 // Set viewport for a provided width and height
 void SetupViewport(int width, int height)
 {
-    CORE.Window.render.width = width;
-    CORE.Window.render.height = height;
-
+    //CORE.Window.render.width = width;
+    //CORE.Window.render.height = height;
+    
     // Set viewport width and height
     // NOTE: We consider render size (scaled) and offset in case black bars are required and
     // render area does not match full display area (this situation is only applicable on fullscreen mode)
 #if defined(__APPLE__)
     Vector2 scale = GetWindowScaleDPI();
-    rlViewport(CORE.Window.renderOffset.x/2*scale.x, CORE.Window.renderOffset.y/2*scale.y, (CORE.Window.render.width)*scale.x, (CORE.Window.render.height)*scale.y);
+    rlViewport(CORE.Window.renderOffset.x/2*scale.x, CORE.Window.renderOffset.y/2*scale.y, width*scale.x, height *scale.y);
 #else
-    rlViewport(CORE.Window.renderOffset.x/2, CORE.Window.renderOffset.y/2, CORE.Window.render.width, CORE.Window.render.height);
+    if ((CORE.Window.flags & FLAG_WINDOW_HIGHDPI) > 0)
+    {
+        Vector2 dpi = GetWindowScaleDPI();
+        CORE.Window.render.width = width / dpi.x;
+        CORE.Window.render.height = height / dpi.y;
+    }
+    else
+    {
+        CORE.Window.render.width = width;
+        CORE.Window.render.height = height;
+    }
+    
+    rlViewport(CORE.Window.renderOffset.x/2, CORE.Window.renderOffset.y/2, width, height);
 #endif
 
     rlMatrixMode(RL_PROJECTION);        // Switch to projection matrix
@@ -3198,10 +3211,12 @@ void SetupViewport(int width, int height)
 
     // Set orthographic projection to current framebuffer size
     // NOTE: Configured top-left corner as (0, 0)
-    rlOrtho(0, CORE.Window.render.width, CORE.Window.render.height, 0, 0.0f, 1.0f);
+    rlOrtho(0, width, height, 0, 0.0f, 1.0f);
 
     rlMatrixMode(RL_MODELVIEW);         // Switch back to modelview matrix
     rlLoadIdentity();                   // Reset current matrix (modelview)
+
+    
 }
 
 // Compute framebuffer size relative to screen size and display size
