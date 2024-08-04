@@ -710,10 +710,25 @@ void SetWindowMaxSize(int width, int height)
 // Set window dimensions
 void SetWindowSize(int width, int height)
 {
+#if defined(__APPLE__)
     CORE.Window.screen.width = width;
     CORE.Window.screen.height = height;
-
     glfwSetWindowSize(platform.handle, width, height);
+#else
+    if ((CORE.Window.flags & FLAG_WINDOW_HIGHDPI) > 0)
+    {
+        Vector2 dpi = GetWindowScaleDPI();
+        CORE.Window.screen.width = width;
+        CORE.Window.screen.height = height;
+        glfwSetWindowSize(platform.handle, width * dpi.x, height * dpi.y);
+    }
+    else
+    {
+        CORE.Window.screen.width = width;
+        CORE.Window.screen.height = height;
+        glfwSetWindowSize(platform.handle, width, height);
+    }
+#endif
 }
 
 // Set window opacity, value opacity is between 0.0 and 1.0
@@ -1729,6 +1744,11 @@ static void ErrorCallback(int error, const char *description)
     TRACELOG(LOG_WARNING, "GLFW: Error: %i Description: %s", error, description);
 }
 
+// NOTE: Per GLFW documentation the framebuffer size callback should be used for setting glViewport rather than window size callback
+// From the GLFW documentation: (https://www.glfw.org/docs/3.3/window_guide.html)
+//  > Do not pass the window size to glViewport or other pixel-based OpenGL calls. The window size is in screen coordinates, not pixels. 
+//  > Use the framebuffer size, which is in pixels, for pixel-based calls.
+// SetupViewport() -> rlViewport() -> glViewport()
 static void WindowFramebufferSizeCallback(GLFWwindow* window, int width, int height)
 {
     // Reset viewport and projection matrix for new size
