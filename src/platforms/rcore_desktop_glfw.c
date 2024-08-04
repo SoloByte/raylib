@@ -192,70 +192,53 @@ void ToggleFullscreen(void)
 void ToggleBorderlessWindowed(void)
 {
     // Leave fullscreen before attempting to set borderless windowed mode
-    bool wasOnFullscreen = false;
     if (CORE.Window.fullscreen)
     {
-        // fullscreen already saves the previous position so it does not need to be set here again
         ToggleFullscreen();
-        wasOnFullscreen = true;
+        // We leave here because exiting fullscreen takes longer than 1 frame
+        return;
     }
 
     const int monitor = GetCurrentMonitor();
     int monitorCount;
-    GLFWmonitor **monitors = glfwGetMonitors(&monitorCount);
+    GLFWmonitor** monitors = glfwGetMonitors(&monitorCount);
 
     if ((monitor >= 0) && (monitor < monitorCount))
     {
-        const GLFWvidmode *mode = glfwGetVideoMode(monitors[monitor]);
+        const GLFWvidmode* mode = glfwGetVideoMode(monitors[monitor]);
 
         if (mode)
         {
             if (!IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE))
             {
                 // Store screen position and size
-                // NOTE: If it was on fullscreen, screen position was already stored, so skip setting it here
-                if (!wasOnFullscreen) CORE.Window.previousPosition = CORE.Window.position;
-                CORE.Window.previousScreen = CORE.Window.screen;
+                CORE.Window.previousPosition = CORE.Window.position;
+                // We use the render size incase of high dpi
+                CORE.Window.previousScreen = CORE.Window.render;
 
-                // Set undecorated and topmost modes and flags
-                glfwSetWindowAttrib(platform.handle, GLFW_DECORATED, GLFW_FALSE);
-                CORE.Window.flags |= FLAG_WINDOW_UNDECORATED;
-                glfwSetWindowAttrib(platform.handle, GLFW_FLOATING, GLFW_TRUE);
-                CORE.Window.flags |= FLAG_WINDOW_TOPMOST;
-
-                // Get monitor position and size
                 int monitorPosX = 0;
                 int monitorPosY = 0;
                 glfwGetMonitorPos(monitors[monitor], &monitorPosX, &monitorPosY);
                 const int monitorWidth = mode->width;
                 const int monitorHeight = mode->height;
 
-                // Set screen position and size
-                glfwSetWindowPos(platform.handle, monitorPosX, monitorPosY);
-                glfwSetWindowSize(platform.handle, monitorWidth, monitorHeight);
+                CORE.Window.flags |= FLAG_BORDERLESS_WINDOWED_MODE;
+
+                glfwSetWindowMonitor(platform.handle, monitors[monitor], monitorPosX, monitorPosY, monitorWidth, monitorHeight, GLFW_DONT_CARE);
 
                 // Refocus window
                 glfwFocusWindow(platform.handle);
 
-                CORE.Window.flags |= FLAG_BORDERLESS_WINDOWED_MODE;
             }
             else
             {
-                // Remove topmost and undecorated modes and flags
-                glfwSetWindowAttrib(platform.handle, GLFW_FLOATING, GLFW_FALSE);
-                CORE.Window.flags &= ~FLAG_WINDOW_TOPMOST;
-                glfwSetWindowAttrib(platform.handle, GLFW_DECORATED, GLFW_TRUE);
-                CORE.Window.flags &= ~FLAG_WINDOW_UNDECORATED;
+                glfwSetWindowMonitor(platform.handle, NULL, CORE.Window.previousPosition.x, CORE.Window.previousPosition.y, CORE.Window.previousScreen.width, CORE.Window.previousScreen.height, GLFW_DONT_CARE);
 
-                // Return previous screen size and position
-                // NOTE: The order matters here, it must set size first, then set position, otherwise the screen will be positioned incorrectly
-                glfwSetWindowSize(platform.handle,  CORE.Window.previousScreen.width, CORE.Window.previousScreen.height);
-                glfwSetWindowPos(platform.handle, CORE.Window.previousPosition.x, CORE.Window.previousPosition.y);
+                CORE.Window.flags &= ~FLAG_BORDERLESS_WINDOWED_MODE;
 
                 // Refocus window
                 glfwFocusWindow(platform.handle);
 
-                CORE.Window.flags &= ~FLAG_BORDERLESS_WINDOWED_MODE;
             }
         }
         else TRACELOG(LOG_WARNING, "GLFW: Failed to find video mode for selected monitor");
