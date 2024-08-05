@@ -145,10 +145,21 @@ bool WindowShouldClose(void)
 // Toggle fullscreen mode
 void ToggleFullscreen(void)
 {
+    // Leave fullscreen before attempting to set borderless windowed mode
+    if (IsWindowState(FLAG_BORDERLESS_WINDOWED_MODE))
+    {
+        ToggleBorderlessWindowed();
+
+        //We return here as well to make it consistent with ToggleBorderlessWindowed()
+        return;
+    }
+
+    // Activate Fullscreen
     if (!CORE.Window.fullscreen)
     {
-        // Store previous window position (in case we exit fullscreen)
+        // Store previous window position & size (in case we exit fullscreen)
         CORE.Window.previousPosition = CORE.Window.position;
+        CORE.Window.previousScreen = CORE.Window.render;
         
         int monitorCount = 0;
         int monitorIndex = GetCurrentMonitor();
@@ -156,6 +167,39 @@ void ToggleFullscreen(void)
 
         // Use current monitor, so we correctly get the display the window is on
         GLFWmonitor *monitor = (monitorIndex < monitorCount)? monitors[monitorIndex] : NULL;
+
+        const GLFWvidmode* mode = NULL;
+
+        int modesCount = 0;
+        const GLFWvidmode* modes = glfwGetVideoModes(monitor, &modesCount);
+
+        // Looking for the closest supported resolution of the monitor to activate fullscreen only with valid resolutions
+        // and not have glfw choose one for us
+        // this also allows us to restore to the correct window size after exiting fullscreen even the fullscreen resolution was different
+        int desiredWidth = CORE.Window.screen.width;
+        int desiredHeight = CORE.Window.screen.height;
+
+        for (int i = 0; i < modesCount; i++)
+        {
+            if (modes[i].width >= desiredWidth)
+            {
+                if (modes[i].height >= desiredHeight)
+                {
+                    mode = &modes[i];
+                    break;
+                }
+            }
+        }
+
+        // If we failed to find an appropriate video mode, we default to the current 
+        // display mode of the monitor associated to the window :
+        if (mode == NULL)
+        {
+            mode = glfwGetVideoMode(monitor);
+        }
+
+        desiredWidth = mode->width;
+        desiredHeight = mode->height;
 
         if (monitor == NULL)
         {
@@ -171,16 +215,39 @@ void ToggleFullscreen(void)
             CORE.Window.fullscreen = true;
             CORE.Window.flags |= FLAG_FULLSCREEN_MODE;
 
-            glfwSetWindowMonitor(platform.handle, monitor, 0, 0, CORE.Window.screen.width, CORE.Window.screen.height, GLFW_DONT_CARE);
+            glfwSetWindowMonitor(platform.handle, monitor, 0, 0, desiredWidth, desiredHeight, GLFW_DONT_CARE);
         }
 
     }
+    // Exit Fullscreen and restore window
     else
     {
         CORE.Window.fullscreen = false;
         CORE.Window.flags &= ~FLAG_FULLSCREEN_MODE;
 
-        glfwSetWindowMonitor(platform.handle, NULL, CORE.Window.previousPosition.x, CORE.Window.previousPosition.y, CORE.Window.screen.width, CORE.Window.screen.height, GLFW_DONT_CARE);
+
+        if ((CORE.Window.flags & FLAG_WINDOW_UNDECORATED) > 0) 
+        {
+            // The window is already undecorated and we can restore the window right away
+
+            glfwSetWindowMonitor(platform.handle, NULL, CORE.Window.previousPosition.x, CORE.Window.previousPosition.y, CORE.Window.previousScreen.width, CORE.Window.previousScreen.height, GLFW_DONT_CARE);
+        }
+        else 
+        {
+            // Sometimes glfwSetWindowMonitor restores window to a size that is off by a few pixels because of window decorations
+            // Setting the window undecorated and then restoring it fixes this issue
+
+            // Set undecorated mode and flag
+            glfwSetWindowAttrib(platform.handle, GLFW_DECORATED, GLFW_FALSE);
+            CORE.Window.flags |= FLAG_WINDOW_UNDECORATED;
+
+            glfwSetWindowMonitor(platform.handle, NULL, CORE.Window.previousPosition.x, CORE.Window.previousPosition.y, CORE.Window.previousScreen.width, CORE.Window.previousScreen.height, GLFW_DONT_CARE);
+
+            // Remove undecorated mode and flag
+            glfwSetWindowAttrib(platform.handle, GLFW_DECORATED, GLFW_TRUE);
+            CORE.Window.flags &= ~FLAG_WINDOW_UNDECORATED;
+        }
+        
     }
 
     // Try to enable GPU V-Sync, so frames are limited to screen refresh rate (60Hz -> 60 FPS)
@@ -1666,7 +1733,7 @@ static void WindowSizeCallback(GLFWwindow *window, int width, int height)
     CORE.Window.currentFbo.height = height;
     CORE.Window.resizedLastFrame = true;
 
-    if (IsWindowFullscreen()) return;
+    //if (IsWindowFullscreen()) return;
 
     // Set current screen size
 
