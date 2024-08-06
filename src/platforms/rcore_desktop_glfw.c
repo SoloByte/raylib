@@ -229,6 +229,8 @@ void ToggleBorderlessWindowed(void)
                 // Refocus window
                 glfwFocusWindow(platform.handle);
 
+                SetMousePosition(CORE.Input.Mouse.currentPosition.x, CORE.Input.Mouse.currentPosition.y);
+
             }
             else
             {
@@ -236,8 +238,14 @@ void ToggleBorderlessWindowed(void)
 
                 CORE.Window.flags &= ~FLAG_BORDERLESS_WINDOWED_MODE;
 
+                // Update window position right away
+                CORE.Window.position.x = CORE.Window.previousPosition.x;
+                CORE.Window.position.y = CORE.Window.previousPosition.y;
+
                 // Refocus window
                 glfwFocusWindow(platform.handle);
+
+                SetMousePosition(CORE.Input.Mouse.currentPosition.x, CORE.Input.Mouse.currentPosition.y);
 
             }
         }
