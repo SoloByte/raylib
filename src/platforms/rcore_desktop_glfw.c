@@ -216,6 +216,7 @@ void ToggleFullscreen(void)
             CORE.Window.flags |= FLAG_FULLSCREEN_MODE;
 
             glfwSetWindowMonitor(platform.handle, monitor, 0, 0, desiredWidth, desiredHeight, GLFW_DONT_CARE);
+            SetMousePosition(CORE.Input.Mouse.currentPosition.x, CORE.Input.Mouse.currentPosition.y);
         }
 
     }
@@ -246,6 +247,7 @@ void ToggleFullscreen(void)
             // Remove undecorated mode and flag
             glfwSetWindowAttrib(platform.handle, GLFW_DECORATED, GLFW_TRUE);
             CORE.Window.flags &= ~FLAG_WINDOW_UNDECORATED;
+            SetMousePosition(CORE.Input.Mouse.currentPosition.x, CORE.Input.Mouse.currentPosition.y);
         }
         
     }
